@@ -7,13 +7,55 @@ const DOMAINS_FILE = "./src/domains.json";
 
 // Redis for distributed state
 let redis = null;
+let redisConnected = false;
+
 if (config.redis.enabled) {
-    redis = new Redis({
-        host: config.redis.host,
-        port: config.redis.port,
-        lazyConnect: true
-    });
-    redis.on('error', () => { });
+    try {
+        redis = new Redis({
+            host: config.redis.host,
+            port: config.redis.port,
+            password: config.redis.password,
+            db: config.redis.db || 0,
+            retryStrategy: (times) => {
+                if (times > 3) {
+                    logger.warn("DomainManager: Redis connection failed after 3 retries");
+                    return null;
+                }
+                return Math.min(times * 50, 2000);
+            },
+            lazyConnect: true,
+            maxRetriesPerRequest: 3,
+            enableOfflineQueue: false
+        });
+
+        redis.on('error', (err) => {
+            redisConnected = false;
+            logger.warn("DomainManager: Redis error", { error: err.message });
+        });
+
+        redis.on('connect', () => {
+            redisConnected = true;
+            logger.info("DomainManager: Redis connected");
+        });
+
+        redis.on('ready', () => {
+            redisConnected = true;
+        });
+
+        redis.on('close', () => {
+            redisConnected = false;
+        });
+
+        redis.connect().catch((err) => {
+            logger.warn("DomainManager: Could not connect to Redis", { error: err.message });
+            redis = null;
+        });
+    } catch (err) {
+        logger.error("DomainManager: Redis initialization error", { error: err.message });
+        redis = null;
+    }
+} else {
+    logger.info("DomainManager: Redis disabled");
 }
 
 let domains = {};
@@ -31,7 +73,7 @@ if (fs.existsSync(DOMAINS_FILE)) {
 
 // Sync from Redis Helper
 async function syncFromRedis() {
-    if (!redis || redis.status !== 'ready') return;
+    if (!redis || !redisConnected) return;
     try {
         const data = await redis.hgetall("Continuum:domains");
         if (data && Object.keys(data).length > 0) {
@@ -43,7 +85,7 @@ async function syncFromRedis() {
             domains = { ...domains, ...parsed };
         }
     } catch (e) {
-        // Silently fail, rely on local cache
+        logger.warn("Failed to sync from Redis", { error: e.message });
     }
 }
 
@@ -104,7 +146,7 @@ export const domainManager = {
         }
 
         // Save to Redis (Global State)
-        if (redis && redis.status === 'ready') {
+        if (redis && redisConnected) {
             await redis.hset("Continuum:domains", hostname, JSON.stringify(domainConfig));
             await redis.publish("Continuum:config_update", JSON.stringify({ hostname }));
         }
@@ -121,7 +163,7 @@ export const domainManager = {
                 fs.writeFileSync(DOMAINS_FILE, JSON.stringify(domains, null, 2));
             } catch (e) { }
 
-            if (redis && redis.status === 'ready') {
+            if (redis && redisConnected) {
                 await redis.hdel("Continuum:domains", hostname);
                 await redis.publish("Continuum:config_update", JSON.stringify({ hostname }));
             }

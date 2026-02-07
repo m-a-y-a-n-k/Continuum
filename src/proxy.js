@@ -18,48 +18,100 @@ import { executeEdgeRule } from "./edgeEngine.js";
 const CACHE_DIR = config.cacheDir;
 // Redis Client Initialization
 let redis = null;
+let redisSub = null;
+let redisConnected = false;
+
 if (config.redis.enabled) {
-    redis = new Redis({
-        host: config.redis.host,
-        port: config.redis.port,
-        retryStrategy: (times) => Math.min(times * 50, 2000), // Reconnect backoff
-        lazyConnect: true // Don't crash if Redis is down initially
-    });
-
-    let lastRedisError = 0;
-    const REDIS_ERROR_THROTTLE = 60000; // Log redis error at most once per minute
-
-    redis.on("error", (err) => {
-        const now = Date.now();
-        if (now - lastRedisError > REDIS_ERROR_THROTTLE) {
-            logger.error("Redis connection error (throttled)", { error: err.message });
-            lastRedisError = now;
-        }
-    });
-
-    // Connect explicitly to catch initial errors without crashing
-    redis.connect().catch(err => {
-        logger.error("Could not connect to Redis", { error: err.message });
-    });
-
-    // --- Distributed Edge Sync ---
-    const sub = redis.duplicate();
-    sub.on("error", () => { }); // Silence errors for subscriber
-    sub.connect().then(() => {
-        sub.subscribe("Continuum:purge", "Continuum:config_update");
-        sub.on("message", (channel, message) => {
-            try {
-                const data = JSON.parse(message);
-                if (channel === "Continuum:purge") {
-                    logger.info("Distributed Purge Received", { path: data.path, domain: data.domain });
-                    purgeCache(data.path, data.domain, true);
-                } else if (channel === "Continuum:config_update") {
-                    logger.info("Distributed Domain Update Received", { hostname: data.hostname });
-                    domainManager.loadFromRedis();
+    try {
+        redis = new Redis({
+            host: config.redis.host,
+            port: config.redis.port,
+            password: config.redis.password,
+            db: config.redis.db || 0,
+            retryStrategy: (times) => {
+                if (times > 3) {
+                    logger.warn("Redis connection failed after 3 retries, running without Redis");
+                    return null; // Stop retrying
                 }
-            } catch (e) { }
+                return Math.min(times * 50, 2000);
+            },
+            lazyConnect: true,
+            maxRetriesPerRequest: 3,
+            enableReadyCheck: true,
+            enableOfflineQueue: false
         });
-    }).catch(() => { });
+
+        let lastRedisError = 0;
+        const REDIS_ERROR_THROTTLE = 60000; // Log redis error at most once per minute
+
+        redis.on("error", (err) => {
+            redisConnected = false;
+            const now = Date.now();
+            if (now - lastRedisError > REDIS_ERROR_THROTTLE) {
+                logger.warn("Redis connection error (throttled), falling back to local cache", { error: err.message });
+                lastRedisError = now;
+            }
+        });
+
+        redis.on("connect", () => {
+            redisConnected = true;
+            logger.info("Redis connected successfully");
+        });
+
+        redis.on("ready", () => {
+            redisConnected = true;
+            logger.info("Redis ready");
+        });
+
+        redis.on("close", () => {
+            redisConnected = false;
+            logger.warn("Redis connection closed");
+        });
+
+        // Connect explicitly to catch initial errors without crashing
+        redis.connect().then(() => {
+            logger.info("Redis connection established");
+
+            // --- Distributed Edge Sync ---
+            try {
+                redisSub = redis.duplicate();
+                redisSub.on("error", (err) => {
+                    logger.warn("Redis subscriber error", { error: err.message });
+                });
+
+                redisSub.connect().then(() => {
+                    redisSub.subscribe("Continuum:purge", "Continuum:config_update");
+                    redisSub.on("message", (channel, message) => {
+                        try {
+                            const data = JSON.parse(message);
+                            if (channel === "Continuum:purge") {
+                                logger.info("Distributed Purge Received", { path: data.path, domain: data.domain });
+                                purgeCache(data.path, data.domain, true);
+                            } else if (channel === "Continuum:config_update") {
+                                logger.info("Distributed Domain Update Received", { hostname: data.hostname });
+                                domainManager.loadFromRedis();
+                            }
+                        } catch (e) {
+                            logger.warn("Error processing Redis message", { error: e.message });
+                        }
+                    });
+                    logger.info("Redis pub/sub initialized");
+                }).catch((err) => {
+                    logger.warn("Redis subscriber connection failed", { error: err.message });
+                });
+            } catch (err) {
+                logger.warn("Failed to initialize Redis subscriber", { error: err.message });
+            }
+        }).catch((err) => {
+            logger.warn("Could not connect to Redis, running in standalone mode", { error: err.message });
+            redis = null; // Disable Redis if connection fails
+        });
+    } catch (err) {
+        logger.error("Redis initialization error", { error: err.message });
+        redis = null;
+    }
+} else {
+    logger.info("Redis disabled, running in standalone mode");
 }
 
 const rateLimitMap = new Map(); // IP -> { count, windowStart }
@@ -81,7 +133,7 @@ async function checkRateLimit(req) {
     const windowMs = config.rateLimit.windowMs;
     const max = config.rateLimit.max;
 
-    if (redis && redis.status === 'ready') {
+    if (redis && redisConnected) {
         const key = `ratelimit:${ip}`;
         try {
             const count = await redis.incr(key);
@@ -90,7 +142,8 @@ async function checkRateLimit(req) {
             }
             return count <= max;
         } catch (err) {
-            logger.error("Redis rate limit error, falling back to local memory", { error: err.message });
+            logger.warn("Redis rate limit error, falling back to local memory", { error: err.message });
+            // Fall through to local rate limiting
         }
     }
 
@@ -162,7 +215,7 @@ export async function handleRequest(req, res) {
     const metaPath = `${cachePath}.json`;
 
     // 1. Try Redis Cache (Hot Layer)
-    if (redis && redis.status === 'ready') {
+    if (redis && redisConnected) {
         try {
             const [metaRaw, bodyBuffer] = await redis.pipeline()
                 .get(`meta:${cacheKey}`)
@@ -189,7 +242,7 @@ export async function handleRequest(req, res) {
                 logRequest("HIT", hostname, req.url, req.socket.remoteAddress);
                 const buffer = fs.readFileSync(cachePath);
 
-                if (redis && redis.status === 'ready') {
+                if (redis && redisConnected) {
                     const ttl = Math.ceil((meta.expiresAt - Date.now()) / 1000);
                     if (ttl > 0) {
                         redis.pipeline()
@@ -255,7 +308,7 @@ export async function handleRequest(req, res) {
                 };
                 fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
 
-                if (redis && redis.status === 'ready') {
+                if (redis && redisConnected) {
                     redis.pipeline()
                         .set(`meta:${cacheKey}`, JSON.stringify({ headers: headers }), "EX", ttl)
                         .setBuffer(`body:${cacheKey}`, buffer, "EX", ttl)
@@ -344,7 +397,7 @@ async function sendResponse(req, res, buffer, headers, cacheStatus, hostname = '
 }
 
 export function purgeCache(pathOrUrl, domain, localOnly = false) {
-    if (!localOnly && redis && redis.status === 'ready') {
+    if (!localOnly && redis && redisConnected) {
         redis.publish("Continuum:purge", JSON.stringify({ path: pathOrUrl, domain }));
     }
 

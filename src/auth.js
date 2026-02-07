@@ -4,6 +4,7 @@ import cookie from 'cookie';
 import Redis from "ioredis";
 import { config } from "./config.js";
 import { OAuth2Client } from 'google-auth-library';
+import { logger } from './logger.js';
 
 // Google OAuth Client Initialization
 const googleClient = new OAuth2Client(
@@ -14,13 +15,55 @@ const googleClient = new OAuth2Client(
 
 // Redis for Session/OTP (Cluster Support)
 let redis = null;
+let redisConnected = false;
+
 if (config.redis.enabled) {
-    redis = new Redis({
-        host: config.redis.host,
-        port: config.redis.port,
-        lazyConnect: true
-    });
-    redis.on("error", () => { }); // Prevent crash if Redis is down
+    try {
+        redis = new Redis({
+            host: config.redis.host,
+            port: config.redis.port,
+            password: config.redis.password,
+            db: config.redis.db || 0,
+            retryStrategy: (times) => {
+                if (times > 3) {
+                    logger.warn("Auth: Redis connection failed after 3 retries");
+                    return null;
+                }
+                return Math.min(times * 50, 2000);
+            },
+            lazyConnect: true,
+            maxRetriesPerRequest: 3,
+            enableOfflineQueue: false
+        });
+
+        redis.on("error", (err) => {
+            redisConnected = false;
+            logger.warn("Auth: Redis error", { error: err.message });
+        });
+
+        redis.on('connect', () => {
+            redisConnected = true;
+            logger.info("Auth: Redis connected");
+        });
+
+        redis.on('ready', () => {
+            redisConnected = true;
+        });
+
+        redis.on('close', () => {
+            redisConnected = false;
+        });
+
+        redis.connect().catch((err) => {
+            logger.warn("Auth: Could not connect to Redis", { error: err.message });
+            redis = null;
+        });
+    } catch (err) {
+        logger.error("Auth: Redis initialization error", { error: err.message });
+        redis = null;
+    }
+} else {
+    logger.info("Auth: Redis disabled, using in-memory storage");
 }
 
 // Fallback In-Memory Storage (Only works if single worker)
@@ -52,7 +95,7 @@ export async function checkAuth(req) {
 
     if (!sessionId) return false;
 
-    if (redis && redis.status === 'ready') {
+    if (redis && redisConnected) {
         const session = await redis.get(`session:${sessionId}`);
         return !!session;
     } else {
@@ -84,7 +127,7 @@ export async function sendLoginOTP(req, res) {
             // Generate 6-digit OTP
             const otp = crypto.randomInt(100000, 999999).toString();
 
-            if (redis && redis.status === 'ready') {
+            if (redis && redisConnected) {
                 await redis.set(`otp:${email}`, otp, "EX", OTP_TTL);
             } else {
                 otpStore.set(email, { otp, expires: Date.now() + (OTP_TTL * 1000) });
@@ -124,7 +167,7 @@ export function verifyLoginOTP(req, res) {
             const { email, otp } = JSON.parse(body);
             let isValid = false;
 
-            if (redis && redis.status === 'ready') {
+            if (redis && redisConnected) {
                 const storedOtp = await redis.get(`otp:${email}`);
                 if (storedOtp && storedOtp === otp) {
                     isValid = true;
@@ -143,7 +186,7 @@ export function verifyLoginOTP(req, res) {
             // Success: Create Session
             const sessionId = crypto.randomUUID();
 
-            if (redis && redis.status === 'ready') {
+            if (redis && redisConnected) {
                 await redis.set(`session:${sessionId}`, email, "EX", SESSION_TTL);
             } else {
                 sessionStore.set(sessionId, { email, expires: Date.now() + (SESSION_TTL * 1000) });
@@ -204,7 +247,7 @@ export async function handleGoogleCallback(req, res) {
 
         // Create Session
         const sessionId = crypto.randomUUID();
-        if (redis && redis.status === 'ready') {
+        if (redis && redisConnected) {
             await redis.set(`session:${sessionId}`, email, "EX", SESSION_TTL);
         } else {
             sessionStore.set(sessionId, { email, expires: Date.now() + (SESSION_TTL * 1000) });
