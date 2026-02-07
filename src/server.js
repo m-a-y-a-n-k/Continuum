@@ -326,6 +326,20 @@ function renderDashboard(stats) {
             th { background: rgba(0,0,0,0.2); color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.8rem; }
             tr:last-child td { border-bottom: none; }
             tr:hover { background: rgba(255,255,255,0.02); }
+            .nav-link { 
+                position: absolute; 
+                top: 40px; 
+                left: 40px; 
+                color: var(--text-muted); 
+                text-decoration: none; 
+                font-weight: 600; 
+                transition: color 0.2s; 
+                display: flex; 
+                align-items: center; 
+                gap: 8px; 
+                font-size: 0.9rem;
+            }
+            .nav-link:hover { color: var(--accent); }
 
             .refresh {
                 margin-top: 30px;
@@ -346,6 +360,10 @@ function renderDashboard(stats) {
         </script>
     </head>
     <body>
+        <a href="/" class="nav-link">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+            Go to Home
+        </a>
         <div class="header">
             <h1>Pravah</h1>
             <p style="color: #94a3b8; font-size: 1.1rem; margin-top: 10px;">Multi-Tenant SaaS CDN Platform</p>
