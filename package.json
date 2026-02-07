@@ -1,0 +1,12 @@
+{
+  "name": "pravah-cdn",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "dependencies": {
+    "ioredis": "^5.9.2"
+  }
+}

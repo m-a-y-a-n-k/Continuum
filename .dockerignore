@@ -1,0 +1,7 @@
+node_modules
+npm-debug.log
+cache-data
+.git
+.DS_Store
+.agent
+.gemini

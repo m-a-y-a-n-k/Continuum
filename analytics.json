@@ -1,0 +1,26 @@
+{
+  "totalRequests": 74,
+  "hits": 52,
+  "misses": 10,
+  "errors": 12,
+  "lastUpdate": 1770443334918,
+  "history": [],
+  "bandwidth": 716513,
+  "domains": {
+    "localhost": {
+      "totalRequests": 44,
+      "hits": 40,
+      "misses": 4,
+      "errors": 0,
+      "bandwidth": 716513
+    },
+    "unknown": {
+      "totalRequests": 9,
+      "hits": 0,
+      "misses": 0,
+      "errors": 9,
+      "bandwidth": 0
+    }
+  },
+  "activeDomains": 0
+}

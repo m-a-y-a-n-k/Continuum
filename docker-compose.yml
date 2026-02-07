@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  pravah:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379 
+      - ADMIN_USER=admin
+      - ADMIN_PASS=securepass123
+    depends_on:
+      - redis
+    volumes:
+      - ./src:/app/src
+      - ./cache-data:/app/cache-data
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+volumes:
+  redis-data:
