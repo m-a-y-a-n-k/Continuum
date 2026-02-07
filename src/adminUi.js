@@ -170,7 +170,7 @@ export function renderAdminDashboard() {
                     <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 15px; line-height: 1.6;">
                         To point a new domain to Continuum:<br><br>
                         1. Create a <b>CNAME</b> record in your DNS provider.<br>
-                        2. Point it to: <code>edge.continuum-cdn.com</code><br>
+                        2. Point it to: <code id="cdn-host">edge.continuum-cdn.com</code><br>
                         3. Click "Verify DNS" to check status.
                     </p>
                 </div>
@@ -266,6 +266,9 @@ export function renderAdminDashboard() {
             }
 
             fetchDomains();
+
+            // Set dynamic instruction host
+            document.getElementById('cdn-host').textContent = window.location.host;
         </script>
     </body>
     </html>

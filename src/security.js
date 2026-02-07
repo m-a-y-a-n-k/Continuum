@@ -1,3 +1,6 @@
+import crypto from 'crypto';
+import { config } from './config.js';
+
 /**
  * Security Headers Middleware
  * Adds essential security headers to all responses
@@ -87,11 +90,11 @@ export function handleCORS(req, res, domainConfig = {}) {
  * IP Whitelist Check for Admin Routes
  */
 export function checkIPWhitelist(req) {
-    const whitelist = process.env.ADMIN_WHITELIST_IPS;
-    if (!whitelist) return true; // No whitelist configured
+    const whitelist = config.security.adminWhitelist;
+    if (!whitelist || whitelist.length === 0) return true; // No whitelist configured
 
     const clientIP = req.socket.remoteAddress;
-    const allowedIPs = whitelist.split(',').map(ip => ip.trim());
+    const allowedIPs = whitelist;
 
     // Check exact match or CIDR range
     for (const allowed of allowedIPs) {
@@ -141,8 +144,7 @@ export function verifyRequestSignature(req) {
     }
 
     // Verify signature
-    const secret = process.env.SESSION_SECRET || 'default-secret';
-    const crypto = require('crypto');
+    const secret = config.security.sessionSecret || 'default-secret';
     const expectedSignature = crypto
         .createHmac('sha256', secret)
         .update(`${req.method}${req.url}${timestamp}`)
@@ -156,8 +158,7 @@ export function verifyRequestSignature(req) {
  */
 export function generateRequestSignature(method, url) {
     const timestamp = Date.now().toString();
-    const secret = process.env.SESSION_SECRET || 'default-secret';
-    const crypto = require('crypto');
+    const secret = config.security.sessionSecret || 'default-secret';
 
     const signature = crypto
         .createHmac('sha256', secret)

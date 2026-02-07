@@ -1,5 +1,7 @@
 import https from "https";
 import http2 from "http2";
+import http from "http";
+import tls from "tls";
 import fs from "fs";
 import path from "path";
 import { config } from "./config.js";
@@ -41,7 +43,7 @@ export class SecureServerManager {
             // Load certificate
             const { cert, key } = await sslManager.getCertificate(hostname);
 
-            const context = require('tls').createSecureContext({
+            const context = tls.createSecureContext({
                 cert,
                 key
             });
@@ -130,7 +132,7 @@ export class SecureServerManager {
         }
 
         logger.info("⚠️  Creating HTTP Server (not recommended for production)");
-        return require('http').createServer(requestHandler);
+        return http.createServer(requestHandler);
     }
 }
 
