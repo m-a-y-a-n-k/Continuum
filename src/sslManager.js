@@ -42,8 +42,19 @@ export const sslManager = {
         logger.info("Provisioning SSL Certificate via ACME", { domain });
 
         try {
+            // Determine ACME directory URL
+            const directoryUrl = config.acme.directory === 'production'
+                ? acme.directory.letsencrypt.production
+                : acme.directory.letsencrypt.staging;
+
+            logger.info("Using ACME directory", {
+                domain,
+                directory: config.acme.directory,
+                url: directoryUrl
+            });
+
             const client = new acme.Client({
-                directoryUrl: acme.directory.letsencrypt.staging, // Use staging for testing
+                directoryUrl,
                 accountKey: await acme.crypto.createPrivateKey()
             });
 
@@ -52,8 +63,19 @@ export const sslManager = {
                 commonName: domain,
             });
 
-            /* Certificate production logic would go here in a real public server */
-            /* For local development, we'll generate a self-signed and mock the flow */
+            /* 
+             * For production deployment with real domains:
+             * 1. Implement HTTP-01 or DNS-01 challenge
+             * 2. Verify domain ownership
+             * 3. Complete ACME flow
+             * 
+             * For now, we'll use self-signed for local development
+             */
+
+            if (config.acme.directory === 'production' && process.env.NODE_ENV === 'production') {
+                // TODO: Implement full ACME challenge flow
+                logger.warn("Production ACME not fully implemented, using self-signed", { domain });
+            }
 
             const { cert, privateKey } = this.generateSelfSigned(domain);
 
@@ -63,6 +85,8 @@ export const sslManager = {
 
             fs.writeFileSync(certPath, cert);
             fs.writeFileSync(keyPath, privateKey);
+
+            logger.info("SSL Certificate provisioned", { domain });
 
             return { cert, key: privateKey };
         } catch (err) {

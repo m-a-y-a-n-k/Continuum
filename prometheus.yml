@@ -1,0 +1,41 @@
+# Prometheus Configuration for Continuum CDN
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'continuum-cdn'
+    environment: 'production'
+
+# Alerting configuration (optional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # - 'alertmanager:9093'
+
+# Scrape configurations
+scrape_configs:
+  # Continuum CDN metrics
+  - job_name: 'continuum'
+    static_configs:
+      - targets: ['continuum:9090']
+        labels:
+          service: 'cdn'
+    
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Redis metrics (if redis_exporter is added)
+  - job_name: 'redis'
+    static_configs:
+      - targets: []
+        # - 'redis-exporter:9121'
+        labels:
+          service: 'redis'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

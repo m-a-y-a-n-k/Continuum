@@ -32,11 +32,17 @@ const OTP_TTL = 5 * 60; // Seconds
 
 // Email Transporter (Mock or Real)
 let transporter = null;
-if (process.env.SMTP_HOST) {
+if (config.smtp.host) {
     transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+        host: config.smtp.host,
+        port: config.smtp.port,
+        secure: config.smtp.port === 465,
+        auth: {
+            user: config.smtp.user,
+            pass: config.smtp.pass
+        }
     });
+    logger.info("SMTP configured", { host: config.smtp.host, port: config.smtp.port });
 }
 
 // 1. Check if Request is Authenticated
@@ -89,7 +95,7 @@ export async function sendLoginOTP(req, res) {
             // Send Email
             if (transporter) {
                 await transporter.sendMail({
-                    from: '"Continuum Admin" <noreply@continuum.dev>',
+                    from: `"Continuum Admin" <${config.smtp.from}>`,
                     to: email,
                     subject: 'Admin Login Code',
                     text: message
