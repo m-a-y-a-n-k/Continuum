@@ -3,6 +3,14 @@ import nodemailer from 'nodemailer';
 import cookie from 'cookie';
 import Redis from "ioredis";
 import { config } from "./config.js";
+import { OAuth2Client } from 'google-auth-library';
+
+// Google OAuth Client Initialization
+const googleClient = new OAuth2Client(
+    config.google.clientId,
+    config.google.clientSecret,
+    config.google.redirectUri
+);
 
 // Redis for Session/OTP (Cluster Support)
 let redis = null;
@@ -81,7 +89,7 @@ export async function sendLoginOTP(req, res) {
             // Send Email
             if (transporter) {
                 await transporter.sendMail({
-                    from: '"Continuum Admin" <noreply@Continuum.dev>',
+                    from: '"Continuum Admin" <noreply@continuum.dev>',
                     to: email,
                     subject: 'Admin Login Code',
                     text: message
@@ -156,16 +164,60 @@ export function verifyLoginOTP(req, res) {
     });
 }
 
-// 5. Placeholder Google OAuth Start
+// 5. Google OAuth Flow
 export function startGoogleLogin(req, res) {
-    // In a real app, you'd construct the Google Auth URL with client_id, redirect_uri, scopes etc.
-    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=http://${req.headers.host}/auth/google/callback&response_type=code&scope=email%20profile`;
+    if (!config.google.clientId) {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        return res.end(`<h1>Google Login Not Configured</h1><p>Please add GOOGLE_CLIENT_ID to .env</p><a href="/login">Back</a>`);
+    }
 
-    // Redirect user to Google
-    // res.writeHead(302, { Location: googleAuthUrl });
-    // res.end();
+    const authorizeUrl = googleClient.generateAuthUrl({
+        access_type: 'offline',
+        scope: ['https://www.googleapis.com/auth/userinfo.profile', 'https://www.googleapis.com/auth/userinfo.email'],
+    });
 
-    // Since we don't have keys, show an error page for now
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(`<h1>Google Login Not Configured</h1><p>Please add Client ID to .env</p><a href="/login">Back</a>`);
+    res.writeHead(302, { Location: authorizeUrl });
+    res.end();
+}
+
+export async function handleGoogleCallback(req, res) {
+    try {
+        const url = new URL(req.url, `http://${req.headers.host}`);
+        const code = url.searchParams.get('code');
+
+        const { tokens } = await googleClient.getToken(code);
+        googleClient.setCredentials(tokens);
+
+        const ticket = await googleClient.verifyIdToken({
+            idToken: tokens.id_token,
+            audience: config.google.clientId,
+        });
+
+        const payload = ticket.getPayload();
+        const email = payload.email;
+
+        // Create Session
+        const sessionId = crypto.randomUUID();
+        if (redis && redis.status === 'ready') {
+            await redis.set(`session:${sessionId}`, email, "EX", SESSION_TTL);
+        } else {
+            sessionStore.set(sessionId, { email, expires: Date.now() + (SESSION_TTL * 1000) });
+        }
+
+        const setCookie = cookie.serialize('Continuum_session', sessionId, {
+            httpOnly: true,
+            maxAge: SESSION_TTL,
+            path: '/',
+            sameSite: 'strict',
+        });
+
+        res.writeHead(302, {
+            'Set-Cookie': setCookie,
+            'Location': '/admin-dashboard'
+        });
+        res.end();
+    } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'text/html' });
+        res.end(`<h1>Auth Failed</h1><p>${e.message}</p><a href="/login">Retry</a>`);
+    }
 }

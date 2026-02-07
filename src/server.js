@@ -10,7 +10,7 @@ import { renderLandingPage } from "./landing.js";
 import { renderLoginPage } from "./authUi.js";
 import { renderDashboard } from "./dashboardUi.js";
 import { logger } from "./logger.js";
-import { checkAuth, requireAuth, sendLoginOTP, verifyLoginOTP, startGoogleLogin } from "./auth.js";
+import { checkAuth, requireAuth, sendLoginOTP, verifyLoginOTP, startGoogleLogin, handleGoogleCallback } from "./auth.js";
 import { startHealthMonitor } from "./healthMonitor.js";
 import { dnsManager } from "./dnsManager.js";
 import { sslManager } from "./sslManager.js";
@@ -61,6 +61,7 @@ if (config.cluster && cluster.isPrimary) {
         if (url.pathname === "/auth/login" && req.method === "POST") return sendLoginOTP(req, res);
         if (url.pathname === "/auth/verify" && req.method === "POST") return verifyLoginOTP(req, res);
         if (url.pathname === "/auth/google") return startGoogleLogin(req, res);
+        if (url.pathname === "/auth/google/callback") return handleGoogleCallback(req, res);
 
         if ((url.pathname.startsWith("/admin/") || url.pathname === "/admin-dashboard") && !(await checkAuth(req))) {
             return requireAuth(req, res);
