@@ -1,0 +1,14 @@
+{
+  "url": "/spec.json",
+  "headers": {
+    "date": "Sat, 07 Feb 2026 07:44:46 GMT",
+    "content-type": "application/json",
+    "content-length": "41019",
+    "connection": "keep-alive",
+    "server": "gunicorn/19.9.0",
+    "access-control-allow-origin": "*",
+    "access-control-allow-credentials": "true"
+  },
+  "expiresAt": 1770453886581,
+  "createdAt": 1770450286877
+}

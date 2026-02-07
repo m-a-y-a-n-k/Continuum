@@ -6,6 +6,7 @@ import { getStats, saveStats, logRequest } from "./analytics.js";
 import { config } from "./config.js";
 import { domainManager } from "./domainManager.js";
 import { renderAdminDashboard } from "./adminUi.js";
+import { renderLandingPage } from "./landing.js";
 import { logger } from "./logger.js";
 import { checkAuth, requireAuth } from "./auth.js";
 
@@ -139,6 +140,12 @@ if (config.cluster && cluster.isPrimary) {
                     res.end("Invalid JSON");
                 }
             });
+            return;
+        }
+
+        if (url.pathname === "/landing" || url.pathname === "/info") {
+            res.writeHead(200, { "Content-Type": "text/html" });
+            res.end(renderLandingPage());
             return;
         }
 

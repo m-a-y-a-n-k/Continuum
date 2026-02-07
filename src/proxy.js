@@ -11,6 +11,7 @@ import Redis from "ioredis";
 
 import { domainManager } from "./domainManager.js";
 import { checkWAF } from "./waf.js";
+import { renderLandingPage } from "./landing.js";
 
 const CACHE_DIR = config.cacheDir;
 // Redis Client Initialization
@@ -113,10 +114,7 @@ export async function handleRequest(req, res) {
         } else {
             logger.warn("Unknown host request", { hostname, url: req.url });
             res.writeHead(404, { "Content-Type": "text/html" });
-            return res.end(`
-                 <h1>Domain Not Configured</h1>
-                 <p>The domain <strong>${hostname}</strong> is not configured on Pravah CDN.</p>
-             `);
+            return res.end(renderLandingPage()); // Serve Landing Page instead of generic 404
         }
     }
 
