@@ -116,7 +116,7 @@ if (config.cluster && cluster.isPrimary) {
                 try {
                     const data = JSON.parse(Buffer.concat(body).toString());
                     if (data.hostname && data.origin) {
-                        await domainManager.addDomain(data.hostname, data.origin);
+                        await domainManager.addDomain(data.hostname, data.origin, data.plan || "free");
                         res.writeHead(200, { "Content-Type": "application/json" });
                         res.end(JSON.stringify({ success: true, msg: `Added ${data.hostname}` }));
                     } else {

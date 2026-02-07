@@ -84,19 +84,40 @@ export const domainManager = {
             lastSync = now;
             syncFromRedis(); // Fire and forget update
         }
-        return domains[hostname];
+
+        const entry = domains[hostname];
+        if (!entry) return null;
+
+        // Handle both legacy string format and new object format
+        if (typeof entry === 'string') return entry;
+        return entry.active !== false ? entry.origin : null;
+    },
+
+    // Gets the full configuration for a domain
+    getConfig(hostname) {
+        const entry = domains[hostname];
+        if (!entry) return null;
+        if (typeof entry === 'string') return { origin: entry, plan: 'free', active: true };
+        return entry;
     },
 
     // Adds/Updates a domain dynamically in Redis + Local
-    async addDomain(hostname, origin) {
-        domains[hostname] = origin;
+    async addDomain(hostname, origin, plan = "free") {
+        const domainConfig = {
+            origin,
+            plan,
+            active: true,
+            createdAt: new Date().toISOString()
+        };
+
+        domains[hostname] = domainConfig;
         saveToDisk();
 
         if (redis && redis.status === 'ready') {
-            await redis.hset("pravah:domains", hostname, origin);
+            await redis.hset("pravah:domains", hostname, JSON.stringify(domainConfig));
         }
 
-        logger.info("Admin Added Domain", { hostname, origin });
+        logger.info("Admin Added/Updated Domain", { hostname, origin, plan });
         return true;
     },
 

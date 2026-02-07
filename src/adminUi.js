@@ -141,7 +141,15 @@ export function renderAdminDashboard() {
                     </div>
                     <div class="form-group">
                         <label for="origin">Origin URL</label>
-                        <input type="url" id="origin" placeholder="e.g. https://wordpress-server.com" required>
+                        <input type="url" id="origin" placeholder="https://origin.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="plan">Service Plan</label>
+                        <select id="plan" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border); color: var(--text); padding: 12px 16px; border-radius: 8px; font-family: inherit; font-size: 1rem;">
+                            <option value="free">Free Tier</option>
+                            <option value="pro">Pro ($25/mo)</option>
+                            <option value="enterprise">Enterprise</option>
+                        </select>
                     </div>
                     <button type="submit" class="btn-primary">Add Tenant</button>
                 </form>
@@ -176,12 +184,12 @@ export function renderAdminDashboard() {
                 }
             }
 
-            async function addDomain(hostname, origin) {
+            async function addDomain(hostname, origin, plan) {
                 try {
                     const res = await fetch(API_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ hostname, origin })
+                        body: JSON.stringify({ hostname, origin, plan })
                     });
                     const data = await res.json();
                     
@@ -232,15 +240,25 @@ export function renderAdminDashboard() {
                     return;
                 }
 
-                listEl.innerHTML = entries.map(([host, origin]) => \`
-                    <div class="domain-item">
-                        <div class="domain-info">
-                            <div class="domain-host"><span class="domain-status"></span>\${host}</div>
-                            <div class="domain-origin">Proxies to: \${origin}</div>
+                listEl.innerHTML = entries.map(([host, config]) => {
+                    const origin = typeof config === 'string' ? config : config.origin;
+                    const plan = typeof config === 'string' ? 'free' : (config.plan || 'free');
+                    const planColor = plan === 'free' ? '#94a3b8' : plan === 'pro' ? '#3b82f6' : '#a855f7';
+
+                    return \`
+                        <div class="domain-item">
+                            <div class="domain-info">
+                                <div class="domain-host">
+                                    <span class="domain-status"></span>
+                                    \${host}
+                                    <span style="font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: \${planColor}22; color: \${planColor}; border: 1px solid \${planColor}44; margin-left: 10px; text-transform: uppercase;">\${plan}</span>
+                                </div>
+                                <div class="domain-origin">Proxies to: \${origin}</div>
+                            </div>
+                            <button class="btn-danger" onclick="deleteDomain('\${host}')">Remove</button>
                         </div>
-                        <button class="btn-danger" onclick="deleteDomain('\${host}')">Remove</button>
-                    </div>
-                \`).join('');
+                    \`;
+                }).join('');
             }
 
             function showToast(msg, type = 'success') {
@@ -259,7 +277,8 @@ export function renderAdminDashboard() {
                 e.preventDefault();
                 const hostname = document.getElementById('hostname').value.trim();
                 const origin = document.getElementById('origin').value.trim();
-                if(hostname && origin) addDomain(hostname, origin);
+                const plan = document.getElementById('plan').value;
+                if(hostname && origin) addDomain(hostname, origin, plan);
             });
 
             // Initial Load

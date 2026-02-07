@@ -12,6 +12,7 @@ import Redis from "ioredis";
 import { domainManager } from "./domainManager.js";
 import { checkWAF } from "./waf.js";
 import { renderLandingPage } from "./landing.js";
+import { optimizeImage } from "./imageProcessor.js";
 
 const CACHE_DIR = config.cacheDir;
 // Redis Client Initialization
@@ -55,12 +56,27 @@ function getCacheKey(req, hostname) {
         .digest("hex");
 }
 
-function checkRateLimit(req) {
+async function checkRateLimit(req) {
     const ip = req.socket.remoteAddress;
     const now = Date.now();
     const windowMs = config.rateLimit.windowMs;
     const max = config.rateLimit.max;
 
+    // 1. Try Redis for Distributed Rate Limiting
+    if (redis && redis.status === 'ready') {
+        const key = `ratelimit:${ip}`;
+        try {
+            const count = await redis.incr(key);
+            if (count === 1) {
+                await redis.expire(key, Math.ceil(windowMs / 1000));
+            }
+            return count <= max;
+        } catch (err) {
+            logger.error("Redis rate limit error, falling back to local memory", { error: err.message });
+        }
+    }
+
+    // 2. Fallback to Local Memory
     if (!rateLimitMap.has(ip)) {
         rateLimitMap.set(ip, { count: 1, windowStart: now });
         return true;
@@ -92,7 +108,7 @@ export async function handleRequest(req, res) {
         return res.end(`Forbidden: ${wafResult.reason}`);
     }
 
-    if (!checkRateLimit(req)) {
+    if (!(await checkRateLimit(req))) {
         res.writeHead(429, { "Content-Type": "text/plain" });
         return res.end("Too Many Requests (Rate limit exceeded)");
     }
@@ -133,7 +149,7 @@ export async function handleRequest(req, res) {
                 const meta = JSON.parse(metaRaw[1]);
                 logger.info("Cache HIT (Redis)", { hostname, url: req.url });
                 logRequest("HIT", hostname);
-                return sendResponse(req, res, bodyBuffer[1], meta.headers, "HIT-REDIS", hostname);
+                return await sendResponse(req, res, bodyBuffer[1], meta.headers, "HIT-REDIS", hostname);
             }
         } catch (err) {
             logger.error("Redis read error", { error: err.message });
@@ -160,7 +176,7 @@ export async function handleRequest(req, res) {
                     }
                 }
 
-                return sendResponse(req, res, buffer, meta.headers, "HIT-DISK", hostname);
+                return await sendResponse(req, res, buffer, meta.headers, "HIT-DISK", hostname);
             } else {
                 logger.debug("Cache Stale", { hostname, url: req.url });
                 fs.unlinkSync(cachePath);
@@ -202,7 +218,7 @@ export async function handleRequest(req, res) {
 
         let body = [];
         proxyRes.on("data", chunk => body.push(chunk));
-        proxyRes.on("end", () => {
+        proxyRes.on("end", async () => {
             const buffer = Buffer.concat(body);
             logBandwidth(buffer.length, hostname);
 
@@ -224,7 +240,7 @@ export async function handleRequest(req, res) {
                 }
             }
 
-            sendResponse(req, res, buffer, headers, "MISS", hostname);
+            await sendResponse(req, res, buffer, headers, "MISS", hostname);
         });
     });
 
@@ -238,12 +254,34 @@ export async function handleRequest(req, res) {
     req.pipe(proxyReq);
 }
 
-function sendResponse(req, res, buffer, headers, cacheStatus, hostname = 'unknown') {
+async function sendResponse(req, res, buffer, headers, cacheStatus, hostname = 'unknown') {
     let responseHeaders = {
         ...headers,
         "X-Cache": cacheStatus,
         "X-Pravah-Worker": process.pid
     };
+
+    // --- Image Optimization ---
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const w = url.searchParams.get("w") || url.searchParams.get("width");
+    const h = url.searchParams.get("h") || url.searchParams.get("height");
+    const q = url.searchParams.get("q") || url.searchParams.get("quality");
+    const f = url.searchParams.get("f") || url.searchParams.get("format");
+
+    const contentType = (headers["content-type"] || "").toLowerCase();
+    const isImage = contentType.startsWith("image/") || req.url.match(/\.(jpg|jpeg|png|webp|avif)$/i);
+
+    if (isImage && (w || h || q || f)) {
+        logger.info("Optimizing image on-the-fly", { url: req.url, w, h, q, f });
+        const optimized = await optimizeImage(buffer, { width: w, height: h, quality: q, format: f });
+        if (optimized.buffer) {
+            buffer = optimized.buffer;
+            if (optimized.contentType) {
+                responseHeaders["content-type"] = optimized.contentType;
+            }
+            responseHeaders["X-Pravah-Optimized"] = "true";
+        }
+    }
 
     // Compression
     const acceptEncoding = req.headers["accept-encoding"] || "";
