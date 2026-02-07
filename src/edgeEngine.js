@@ -2,7 +2,7 @@ import vm from "vm";
 import { logger } from "./logger.js";
 
 /**
- * Pravah Edge Logic Engine
+ * Continuum Edge Logic Engine
  * Allows running custom JS snippets at the edge.
  */
 export async function executeEdgeRule(rule, req, res, phase = 'request') {

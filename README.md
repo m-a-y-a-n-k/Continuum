@@ -1,10 +1,10 @@
-# Pravah 🚀
+# Continuum 🚀
 
-**Pravah** is a high-performance, multi-tenant SaaS CDN (Content Delivery Network) platform designed to provide secure, scalable, and efficient content delivery for modern web applications.
+**Continuum** is a high-performance, multi-tenant SaaS CDN (Content Delivery Network) platform designed to provide secure, scalable, and efficient content delivery for modern web applications.
 
 ## ✨ Features
 
-- 🌐 **Multi-Tenant Architecture**: Manage multiple domains and origins from a single Pravah instance.
+- 🌐 **Multi-Tenant Architecture**: Manage multiple domains and origins from a single Continuum instance.
 - 🛡️ **Web Application Firewall (WAF)**: Built-in protection against common web threats.
 - 🔐 **Advanced Authentication**: Secure Admin Access with Email OTP and Google SSO integration.
 - 📊 **Real-time Analytics**: Comprehensive dashboard showing traffic, bandwidth, and cache hit rates.
@@ -33,7 +33,7 @@
 1. Clone the repository:
    ```bash
    git clone <repository-url>
-   cd Pravah
+   cd Continuum
    ```
 
 2. Install dependencies:
@@ -46,7 +46,7 @@
 
 ### Running Locally
 
-To start the Pravah server:
+To start the Continuum server:
 ```bash
 npm start
 ```
@@ -54,7 +54,7 @@ The server will start on `http://localhost:5000` (by default).
 
 ### Running with Docker
 
-Use Docker Compose to spin up Pravah along with Redis:
+Use Docker Compose to spin up Continuum along with Redis:
 ```bash
 docker-compose up -d
 ```
@@ -69,7 +69,7 @@ docker-compose up -d
 
 ### Admin API
 
-Pravah provides a set of admin APIs for domain management:
+Continuum provides a set of admin APIs for domain management:
 
 - **List Domains**: `GET /admin/domains`
 - **Add Domain**: `POST /admin/domains`

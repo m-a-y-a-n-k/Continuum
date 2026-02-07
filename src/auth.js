@@ -34,7 +34,7 @@ if (process.env.SMTP_HOST) {
 // 1. Check if Request is Authenticated
 export async function checkAuth(req) {
     const cookies = cookie.parse(req.headers.cookie || '');
-    const sessionId = cookies['pravah_session'];
+    const sessionId = cookies['Continuum_session'];
 
     if (!sessionId) return false;
 
@@ -76,12 +76,12 @@ export async function sendLoginOTP(req, res) {
                 otpStore.set(email, { otp, expires: Date.now() + (OTP_TTL * 1000) });
             }
 
-            const message = `Your Pravah Admin Login Code is: ${otp}`;
+            const message = `Your Continuum Admin Login Code is: ${otp}`;
 
             // Send Email
             if (transporter) {
                 await transporter.sendMail({
-                    from: '"Pravah Admin" <noreply@pravah.dev>',
+                    from: '"Continuum Admin" <noreply@Continuum.dev>',
                     to: email,
                     subject: 'Admin Login Code',
                     text: message
@@ -136,7 +136,7 @@ export function verifyLoginOTP(req, res) {
             }
 
             // Set HttpOnly Cookie
-            const setCookie = cookie.serialize('pravah_session', sessionId, {
+            const setCookie = cookie.serialize('Continuum_session', sessionId, {
                 httpOnly: true,
                 maxAge: SESSION_TTL,
                 path: '/',

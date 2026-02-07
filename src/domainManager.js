@@ -33,7 +33,7 @@ if (fs.existsSync(DOMAINS_FILE)) {
 async function syncFromRedis() {
     if (!redis || redis.status !== 'ready') return;
     try {
-        const data = await redis.hgetall("pravah:domains");
+        const data = await redis.hgetall("Continuum:domains");
         if (data && Object.keys(data).length > 0) {
             const parsed = {};
             for (const [k, v] of Object.entries(data)) {
@@ -105,8 +105,8 @@ export const domainManager = {
 
         // Save to Redis (Global State)
         if (redis && redis.status === 'ready') {
-            await redis.hset("pravah:domains", hostname, JSON.stringify(domainConfig));
-            await redis.publish("pravah:config_update", JSON.stringify({ hostname }));
+            await redis.hset("Continuum:domains", hostname, JSON.stringify(domainConfig));
+            await redis.publish("Continuum:config_update", JSON.stringify({ hostname }));
         }
 
         logger.info("Admin Added/Updated Domain", { hostname, origin, plan: domainConfig.plan });
@@ -122,8 +122,8 @@ export const domainManager = {
             } catch (e) { }
 
             if (redis && redis.status === 'ready') {
-                await redis.hdel("pravah:domains", hostname);
-                await redis.publish("pravah:config_update", JSON.stringify({ hostname }));
+                await redis.hdel("Continuum:domains", hostname);
+                await redis.publish("Continuum:config_update", JSON.stringify({ hostname }));
             }
             logger.info("Admin Removed Domain", { hostname });
             return true;

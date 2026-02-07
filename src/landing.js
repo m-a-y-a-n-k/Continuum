@@ -6,7 +6,7 @@ export function renderLandingPage() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pravah CDN | The Intelligent Edge</title>
+    <title>Continuum CDN | The Intelligent Edge</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700;800&display=swap" rel="stylesheet">
@@ -281,7 +281,7 @@ export function renderLandingPage() {
     <div class="ambient-light"></div>
 
     <nav>
-        <div class="logo">Pravah</div>
+        <div class="logo">Continuum</div>
         <div class="nav-links">
             <a href="#features">Features</a>
             <a href="/cdn-dashboard" target="_blank">Dashboard</a>
@@ -295,7 +295,7 @@ export function renderLandingPage() {
         
         <div class="cta-group">
             <a href="#features" class="btn btn-primary">Explore Features</a>
-            <a href="https://github.com/m-a-y-a-n-k/Pravah" class="btn btn-outline" target="_blank">View on GitHub</a>
+            <a href="https://github.com/m-a-y-a-n-k/Continuum" class="btn btn-outline" target="_blank">View on GitHub</a>
         </div>
 
         <div class="hero-stats">
@@ -353,13 +353,13 @@ export function renderLandingPage() {
   <span class="string">"shop.brand.io"</span>: <span class="string">"https://storefront-service.internal"</span>,
   <span class="string">"blog.startup.co"</span>: <span class="string">"https://wordpress-cluster.local"</span>
 };
-<span class="comment">// Pravah handles the rest individually for each tenant.</span>
+<span class="comment">// Continuum handles the rest individually for each tenant.</span>
 </pre>
         </div>
     </div>
 
     <footer>
-        <p>Pravah CDN &copy; ${new Date().getFullYear()} &bull; Built with Node.js &bull; Designed for Performance</p>
+        <p>Continuum CDN &copy; ${new Date().getFullYear()} &bull; Built with Node.js &bull; Designed for Performance</p>
     </footer>
 
 </body>

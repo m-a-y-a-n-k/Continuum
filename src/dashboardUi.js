@@ -16,7 +16,7 @@ export function renderDashboard(stats) {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Pravah | Real-time Analytics</title>
+        <title>Continuum | Real-time Analytics</title>
         <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
@@ -66,7 +66,7 @@ export function renderDashboard(stats) {
         <div class="container">
             <header>
                 <div>
-                    <h1>Pravah Analytics</h1>
+                    <h1>Continuum Analytics</h1>
                     <p style="color: var(--text-muted); margin-top: 5px;">Real-time traffic & performance monitoring</p>
                 </div>
                 <div style="text-align: right;">

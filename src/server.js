@@ -19,7 +19,7 @@ const PORT = config.port;
 
 if (config.cluster && cluster.isPrimary) {
     const numWorkers = config.maxWorkers || os.cpus().length;
-    logger.info(`🛡️ Pravah Primary ${process.pid} is running`);
+    logger.info(`🛡️ Continuum Primary ${process.pid} is running`);
     logger.info(`� Dashboard: http://localhost:${PORT}/cdn-dashboard`);
     logger.info(`🔧 Admin: http://localhost:${PORT}/admin-dashboard`);
 
@@ -105,7 +105,7 @@ if (config.cluster && cluster.isPrimary) {
             req.on("data", chunk => body.push(chunk));
             req.on("end", async () => {
                 const { hostname } = JSON.parse(Buffer.concat(body).toString());
-                const result = await dnsManager.verifyCNAME(hostname, "edge.pravah-cdn.com");
+                const result = await dnsManager.verifyCNAME(hostname, "edge.Continuum-cdn.com");
                 res.writeHead(200, { "Content-Type": "application/json" });
                 res.end(JSON.stringify(result));
             });

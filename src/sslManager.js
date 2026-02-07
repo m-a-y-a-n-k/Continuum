@@ -11,7 +11,7 @@ if (!fs.existsSync(CERT_DIR)) {
 }
 
 /**
- * SSL Manager for Pravah
+ * SSL Manager for Continuum
  * Automates certificate issuance via Let's Encrypt (ACME).
  */
 export const sslManager = {

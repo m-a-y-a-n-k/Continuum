@@ -6,7 +6,7 @@ export function renderLoginPage() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pravah Admin Login</title>
+    <title>Continuum Admin Login</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -112,7 +112,7 @@ export function renderLoginPage() {
 
     <div class="login-card" id="step1">
         <h1>Welcome Back</h1>
-        <p>Sign in to access Pravah Admin Console</p>
+        <p>Sign in to access Continuum Admin Console</p>
         
         <form onsubmit="sendOTP(event)">
             <input type="email" id="email" placeholder="admin@company.com" required>

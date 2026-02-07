@@ -2,14 +2,14 @@ import dns from "dns/promises";
 import { logger } from "./logger.js";
 
 /**
- * DNS Manager for Pravah
+ * DNS Manager for Continuum
  * Handles verification of customer DNS records.
  */
 export const dnsManager = {
     /**
      * Verifies if a hostname's CNAME points to the CDN's entry point.
      * @param {string} hostname - The customer's domain (e.g., blog.customer.com)
-     * @param {string} targetHost - Your CDN's entry point (e.g., edge.pravah-cdn.com)
+     * @param {string} targetHost - Your CDN's entry point (e.g., edge.Continuum-cdn.com)
      */
     async verifyCNAME(hostname, targetHost) {
         try {

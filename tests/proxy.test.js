@@ -44,7 +44,7 @@ jest.mock('../src/analytics.js', () => ({
     logBandwidth: jest.fn()
 }));
 
-describe('Pravah Proxy', () => {
+describe('Continuum Proxy', () => {
     let server;
 
     beforeAll(() => {

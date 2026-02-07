@@ -46,14 +46,14 @@ if (config.redis.enabled) {
     const sub = redis.duplicate();
     sub.on("error", () => { }); // Silence errors for subscriber
     sub.connect().then(() => {
-        sub.subscribe("pravah:purge", "pravah:config_update");
+        sub.subscribe("Continuum:purge", "Continuum:config_update");
         sub.on("message", (channel, message) => {
             try {
                 const data = JSON.parse(message);
-                if (channel === "pravah:purge") {
+                if (channel === "Continuum:purge") {
                     logger.info("Distributed Purge Received", { path: data.path, domain: data.domain });
                     purgeCache(data.path, data.domain, true);
-                } else if (channel === "pravah:config_update") {
+                } else if (channel === "Continuum:config_update") {
                     logger.info("Distributed Domain Update Received", { hostname: data.hostname });
                     domainManager.loadFromRedis();
                 }
@@ -132,7 +132,7 @@ export async function handleRequest(req, res) {
         });
         logRequest("BLOCKED", hostname);
         res.writeHead(403, { "Content-Type": "text/plain" });
-        return res.end(`Forbidden (Pravah WAF): ${wafResult.reason}`);
+        return res.end(`Forbidden (Continuum WAF): ${wafResult.reason}`);
     }
 
     if (!(await checkRateLimit(req))) {
@@ -281,7 +281,7 @@ async function sendResponse(req, res, buffer, headers, cacheStatus, hostname = '
     let responseHeaders = {
         ...headers,
         "X-Cache": cacheStatus,
-        "X-Pravah-Worker": process.pid
+        "X-Continuum-Worker": process.pid
     };
 
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -304,7 +304,7 @@ async function sendResponse(req, res, buffer, headers, cacheStatus, hostname = '
             if (optimized.contentType) {
                 responseHeaders["content-type"] = optimized.contentType;
             }
-            responseHeaders["X-Pravah-Optimized"] = "true";
+            responseHeaders["X-Continuum-Optimized"] = "true";
         }
     }
 
@@ -345,7 +345,7 @@ async function sendResponse(req, res, buffer, headers, cacheStatus, hostname = '
 
 export function purgeCache(pathOrUrl, domain, localOnly = false) {
     if (!localOnly && redis && redis.status === 'ready') {
-        redis.publish("pravah:purge", JSON.stringify({ path: pathOrUrl, domain }));
+        redis.publish("Continuum:purge", JSON.stringify({ path: pathOrUrl, domain }));
     }
 
     if (pathOrUrl === "all") {

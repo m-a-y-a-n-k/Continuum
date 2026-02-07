@@ -5,7 +5,7 @@ export function renderAdminDashboard() {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Pravah | Admin Control Center</title>
+        <title>Continuum | Admin Control Center</title>
         <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
         <style>
             :root {
@@ -133,7 +133,7 @@ export function renderAdminDashboard() {
     </head>
     <body>
         <div class="sidebar">
-            <div class="logo">Pravah</div>
+            <div class="logo">Continuum</div>
             <a href="#" class="nav-item active">Domains</a>
             <a href="/cdn-dashboard" class="nav-item">Analytics</a>
             <a href="#" class="nav-item">Settings</a>
@@ -167,9 +167,9 @@ export function renderAdminDashboard() {
                 <div class="card">
                     <h3>Edge Network Instructions</h3>
                     <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 15px; line-height: 1.6;">
-                        To point a new domain to Pravah:<br><br>
+                        To point a new domain to Continuum:<br><br>
                         1. Create a <b>CNAME</b> record in your DNS provider.<br>
-                        2. Point it to: <code>edge.pravah-cdn.com</code><br>
+                        2. Point it to: <code>edge.Continuum-cdn.com</code><br>
                         3. Click "Verify DNS" to check status.
                     </p>
                 </div>
