@@ -13,6 +13,7 @@ import { domainManager } from "./domainManager.js";
 import { checkWAF } from "./waf.js";
 import { renderLandingPage } from "./landing.js";
 import { optimizeImage } from "./imageProcessor.js";
+import { executeEdgeRule } from "./edgeEngine.js";
 
 const CACHE_DIR = config.cacheDir;
 // Redis Client Initialization
@@ -38,9 +39,27 @@ if (config.redis.enabled) {
 
     // Connect explicitly to catch initial errors without crashing
     redis.connect().catch(err => {
-        // Initial error might happen immediately, log it once
         logger.error("Could not connect to Redis", { error: err.message });
     });
+
+    // --- Distributed Edge Sync ---
+    const sub = redis.duplicate();
+    sub.on("error", () => { }); // Silence errors for subscriber
+    sub.connect().then(() => {
+        sub.subscribe("pravah:purge", "pravah:config_update");
+        sub.on("message", (channel, message) => {
+            try {
+                const data = JSON.parse(message);
+                if (channel === "pravah:purge") {
+                    logger.info("Distributed Purge Received", { path: data.path, domain: data.domain });
+                    purgeCache(data.path, data.domain, true);
+                } else if (channel === "pravah:config_update") {
+                    logger.info("Distributed Domain Update Received", { hostname: data.hostname });
+                    domainManager.loadFromRedis();
+                }
+            } catch (e) { }
+        });
+    }).catch(() => { });
 }
 
 const rateLimitMap = new Map(); // IP -> { count, windowStart }
@@ -62,7 +81,6 @@ async function checkRateLimit(req) {
     const windowMs = config.rateLimit.windowMs;
     const max = config.rateLimit.max;
 
-    // 1. Try Redis for Distributed Rate Limiting
     if (redis && redis.status === 'ready') {
         const key = `ratelimit:${ip}`;
         try {
@@ -76,7 +94,6 @@ async function checkRateLimit(req) {
         }
     }
 
-    // 2. Fallback to Local Memory
     if (!rateLimitMap.has(ip)) {
         rateLimitMap.set(ip, { count: 1, windowStart: now });
         return true;
@@ -96,16 +113,26 @@ async function checkRateLimit(req) {
 export async function handleRequest(req, res) {
     const startTime = Date.now();
 
+    // Extract Hostname (remove port if present)
+    const hostHeader = req.headers.host || "";
+    const hostname = hostHeader.split(":")[0];
+
+    // Get Domain Configuration
+    const domainConfig = domainManager.getConfig(hostname);
+    const origin = await domainManager.getOrigin(hostname);
+
     // 0. WAF Check (Security Layer)
-    const wafResult = checkWAF(req);
+    const wafResult = checkWAF(req, domainConfig || {});
     if (wafResult.blocked) {
         logger.warn("WAF Blocked Request", {
             ip: req.socket.remoteAddress,
             url: req.url,
-            reason: wafResult.reason
+            reason: wafResult.reason,
+            hostname
         });
+        logRequest("BLOCKED", hostname);
         res.writeHead(403, { "Content-Type": "text/plain" });
-        return res.end(`Forbidden: ${wafResult.reason}`);
+        return res.end(`Forbidden (Pravah WAF): ${wafResult.reason}`);
     }
 
     if (!(await checkRateLimit(req))) {
@@ -113,25 +140,23 @@ export async function handleRequest(req, res) {
         return res.end("Too Many Requests (Rate limit exceeded)");
     }
 
-    // Extract Hostname (remove port if present)
-    const hostHeader = req.headers.host || "";
-    const hostname = hostHeader.split(":")[0];
-
-    // Origin Lookup (Dynamic)
-    const origin = await domainManager.getOrigin(hostname);
-
     logger.debug("Routing Decision", { hostname, resolvedOrigin: origin || "null" });
 
     if (!origin) {
-        // Fallback or 404
         logger.warn("Unknown host request", { hostname, url: req.url });
         res.writeHead(404, { "Content-Type": "text/html" });
-        return res.end(renderLandingPage()); // Serve Landing Page for all unknown domains including localhost
+        return res.end(renderLandingPage());
     }
 
-    // Safety check if origin is still null (e.g. localhost wasn't in domains.json)
-    const finalOrigin = origin || config.domains?.[hostname] || "https://httpbin.org";
+    // --- Edge Logic (Request Phase) ---
+    if (domainConfig && domainConfig.edgeRules) {
+        for (const rule of domainConfig.edgeRules) {
+            const edgeResult = await executeEdgeRule(rule, req, res, 'request');
+            if (edgeResult && edgeResult.stop) return; // Script handled response
+        }
+    }
 
+    const finalOrigin = origin;
     const cacheKey = getCacheKey(req, hostname);
     const cachePath = path.join(CACHE_DIR, cacheKey);
     const metaPath = `${cachePath}.json`;
@@ -144,7 +169,6 @@ export async function handleRequest(req, res) {
                 .getBuffer(`body:${cacheKey}`)
                 .exec();
 
-            // ioredis pipeline results are [err, result]
             if (!metaRaw[0] && metaRaw[1] && !bodyBuffer[0] && bodyBuffer[1]) {
                 const meta = JSON.parse(metaRaw[1]);
                 logger.info("Cache HIT (Redis)", { hostname, url: req.url });
@@ -165,7 +189,6 @@ export async function handleRequest(req, res) {
                 logRequest("HIT", hostname);
                 const buffer = fs.readFileSync(cachePath);
 
-                // Add to Redis (Async, fire-and-forget)
                 if (redis && redis.status === 'ready') {
                     const ttl = Math.ceil((meta.expiresAt - Date.now()) / 1000);
                     if (ttl > 0) {
@@ -201,7 +224,7 @@ export async function handleRequest(req, res) {
         method: req.method,
         headers: {
             ...req.headers,
-            host: originUrl.hostname // Change Host header to match origin
+            host: originUrl.hostname
         }
     };
 
@@ -261,7 +284,6 @@ async function sendResponse(req, res, buffer, headers, cacheStatus, hostname = '
         "X-Pravah-Worker": process.pid
     };
 
-    // --- Image Optimization ---
     const url = new URL(req.url, `http://${req.headers.host}`);
     const w = url.searchParams.get("w") || url.searchParams.get("width");
     const h = url.searchParams.get("h") || url.searchParams.get("height");
@@ -271,9 +293,12 @@ async function sendResponse(req, res, buffer, headers, cacheStatus, hostname = '
     const contentType = (headers["content-type"] || "").toLowerCase();
     const isImage = contentType.startsWith("image/") || req.url.match(/\.(jpg|jpeg|png|webp|avif)$/i);
 
-    if (isImage && (w || h || q || f)) {
+    if (isImage && (w || h || q || f || contentType.startsWith("image/"))) {
         logger.info("Optimizing image on-the-fly", { url: req.url, w, h, q, f });
-        const optimized = await optimizeImage(buffer, { width: w, height: h, quality: q, format: f });
+        const optimized = await optimizeImage(buffer, {
+            width: w, height: h, quality: q, format: f,
+            accept: req.headers["accept"]
+        });
         if (optimized.buffer) {
             buffer = optimized.buffer;
             if (optimized.contentType) {
@@ -283,20 +308,17 @@ async function sendResponse(req, res, buffer, headers, cacheStatus, hostname = '
         }
     }
 
-    // Compression
     const acceptEncoding = req.headers["accept-encoding"] || "";
 
-    // Helper to send final response
     const send = (data, encoding) => {
         if (encoding) responseHeaders["content-encoding"] = encoding;
-        // Strip content-length as compression changes it
         delete responseHeaders["content-length"];
         res.writeHead(200, responseHeaders);
         res.end(data);
         logBandwidth(data.length, hostname);
     };
 
-    if (config.compression && buffer.length > 128) { // Compress only if worthwhile
+    if (config.compression && buffer.length > 128) {
         if (acceptEncoding.includes("br")) {
             zlib.brotliCompress(buffer, (err, compressed) => {
                 if (!err) send(compressed, "br");
@@ -321,16 +343,19 @@ async function sendResponse(req, res, buffer, headers, cacheStatus, hostname = '
     send(buffer, null);
 }
 
-export function purgeCache(pathOrUrl, domain) {
+export function purgeCache(pathOrUrl, domain, localOnly = false) {
+    if (!localOnly && redis && redis.status === 'ready') {
+        redis.publish("pravah:purge", JSON.stringify({ path: pathOrUrl, domain }));
+    }
+
     if (pathOrUrl === "all") {
-        console.log("🧹 Purging entire cache...");
         const files = fs.readdirSync(CACHE_DIR);
         files.forEach(file => {
             try { fs.unlinkSync(path.join(CACHE_DIR, file)); } catch (e) { }
         });
 
         if (redis) {
-            redis.flushdb().then(() => console.log("🧹 Redis cache purged.")).catch(console.error);
+            redis.flushdb().catch(console.error);
         }
         return { success: true, count: files.length };
     }
@@ -338,7 +363,6 @@ export function purgeCache(pathOrUrl, domain) {
     let hostname = domain;
     let resourcePath = pathOrUrl;
 
-    // Try to extract hostname from full URL if domain not provided
     try {
         if (pathOrUrl.startsWith("http")) {
             const u = new URL(pathOrUrl);
@@ -384,19 +408,8 @@ export async function cleanupExpiredCache() {
                     deletedCount++;
                 }
             } catch (err) {
-                console.error(`Error reading metadata ${file}, cleaning up:`, err);
                 if (fs.existsSync(cachePath)) fs.unlinkSync(cachePath);
                 fs.unlinkSync(metaPath);
-            }
-        }
-    }
-
-    for (const file of files) {
-        if (!file.endsWith(".json")) {
-            const cachePath = path.join(CACHE_DIR, file);
-            const metaPath = `${cachePath}.json`;
-            if (!fs.existsSync(metaPath)) {
-                fs.unlinkSync(cachePath);
                 deletedCount++;
             }
         }
@@ -404,8 +417,5 @@ export async function cleanupExpiredCache() {
 
     if (deletedCount > 0) {
         console.log(`✅ Garbage collection complete. Removed ${deletedCount} stale items.`);
-    } else {
-        console.log("✅ Cache is already clean.");
     }
 }
-

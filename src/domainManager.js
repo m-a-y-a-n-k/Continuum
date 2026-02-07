@@ -13,15 +13,14 @@ if (config.redis.enabled) {
         port: config.redis.port,
         lazyConnect: true
     });
-    redis.on('error', () => { }); // Silence errors here, main loop handles them
+    redis.on('error', () => { });
 }
 
-// Local Memory Cache (L1)
 let domains = {};
 let lastSync = 0;
-const SYNC_INTERVAL = 5000; // Sync with Redis every 5 seconds
+const SYNC_INTERVAL = 5000;
 
-// Load local backup on startup
+// Initial Load
 if (fs.existsSync(DOMAINS_FILE)) {
     try {
         domains = JSON.parse(fs.readFileSync(DOMAINS_FILE, "utf-8"));
@@ -30,46 +29,18 @@ if (fs.existsSync(DOMAINS_FILE)) {
     }
 }
 
-// Watch for file changes (Robut Polling for Atomic Writes)
-try {
-    // interval: 1000ms is plenty fast for config changes
-    fs.watchFile(DOMAINS_FILE, { interval: 1000 }, (curr, prev) => {
-        if (curr.mtime !== prev.mtime) {
-            try {
-                const fileContent = fs.readFileSync(DOMAINS_FILE, "utf-8");
-                if (fileContent) {
-                    const newDomains = JSON.parse(fileContent);
-                    domains = { ...domains, ...newDomains };
-                    logger.info("Reloaded domains configuration from disk");
-                }
-            } catch (e) {
-                logger.error("Failed to hot-reload domains file", { error: e.message });
-            }
-        }
-    });
-} catch (e) {
-    logger.warn("Could not set up file watcher for domains.json", { error: e.message });
-}
-
-// Persist to disk (Backup)
-function saveToDisk() {
-    try {
-        const tempFile = `${DOMAINS_FILE}.tmp`;
-        fs.writeFileSync(tempFile, JSON.stringify(domains, null, 2));
-        fs.renameSync(tempFile, DOMAINS_FILE); // Atomic write
-    } catch (e) {
-        logger.error("Failed to save domains to disk", { error: e.message });
-    }
-}
-
-// Sync from Redis
+// Sync from Redis Helper
 async function syncFromRedis() {
     if (!redis || redis.status !== 'ready') return;
     try {
         const data = await redis.hgetall("pravah:domains");
         if (data && Object.keys(data).length > 0) {
-            domains = { ...domains, ...data };
-            saveToDisk(); // Update local backup
+            const parsed = {};
+            for (const [k, v] of Object.entries(data)) {
+                parsed[k] = JSON.parse(v);
+            }
+            // Merge but prioritize Redis
+            domains = { ...domains, ...parsed };
         }
     } catch (e) {
         // Silently fail, rely on local cache
@@ -77,23 +48,27 @@ async function syncFromRedis() {
 }
 
 export const domainManager = {
-    // Fast in-memory lookup, but try to sync slightly often
     async getOrigin(hostname) {
         const now = Date.now();
         if (now - lastSync > SYNC_INTERVAL && redis) {
             lastSync = now;
-            syncFromRedis(); // Fire and forget update
+            syncFromRedis();
         }
 
         const entry = domains[hostname];
         if (!entry) return null;
-
-        // Handle both legacy string format and new object format
         if (typeof entry === 'string') return entry;
-        return entry.active !== false ? entry.origin : null;
+        if (entry.active === false) return null;
+
+        if (Array.isArray(entry.origin)) {
+            const health = entry.health || [];
+            const healthyOrigins = entry.origin.filter((o, i) => health[i]?.healthy);
+            return healthyOrigins.length > 0 ? healthyOrigins[0] : entry.origin[0];
+        }
+
+        return entry.origin;
     },
 
-    // Gets the full configuration for a domain
     getConfig(hostname) {
         const entry = domains[hostname];
         if (!entry) return null;
@@ -101,40 +76,63 @@ export const domainManager = {
         return entry;
     },
 
-    // Adds/Updates a domain dynamically in Redis + Local
-    async addDomain(hostname, origin, plan = "free") {
+    updateHealthStatus(hostname, status) {
+        if (domains[hostname]) {
+            domains[hostname].health = status;
+        }
+    },
+
+    async addDomain(hostname, origin, options = {}) {
         const domainConfig = {
+            hostname,
             origin,
-            plan,
+            plan: options.plan || "free",
             active: true,
+            wafRules: options.wafRules || [],
+            edgeRules: options.edgeRules || [],
+            blockedIPs: options.blockedIPs || [],
             createdAt: new Date().toISOString()
         };
 
         domains[hostname] = domainConfig;
-        saveToDisk();
 
-        if (redis && redis.status === 'ready') {
-            await redis.hset("pravah:domains", hostname, JSON.stringify(domainConfig));
+        // Save to disk (Backup)
+        try {
+            fs.writeFileSync(DOMAINS_FILE, JSON.stringify(domains, null, 2));
+        } catch (e) {
+            logger.error("Failed to save domains to disk", { error: e.message });
         }
 
-        logger.info("Admin Added/Updated Domain", { hostname, origin, plan });
-        return true;
+        // Save to Redis (Global State)
+        if (redis && redis.status === 'ready') {
+            await redis.hset("pravah:domains", hostname, JSON.stringify(domainConfig));
+            await redis.publish("pravah:config_update", JSON.stringify({ hostname }));
+        }
+
+        logger.info("Admin Added/Updated Domain", { hostname, origin, plan: domainConfig.plan });
+        return domainConfig;
     },
 
-    // Removes a domain dynamically
     async removeDomain(hostname) {
         if (domains[hostname]) {
             delete domains[hostname];
-            saveToDisk();
+
+            try {
+                fs.writeFileSync(DOMAINS_FILE, JSON.stringify(domains, null, 2));
+            } catch (e) { }
 
             if (redis && redis.status === 'ready') {
                 await redis.hdel("pravah:domains", hostname);
+                await redis.publish("pravah:config_update", JSON.stringify({ hostname }));
             }
-
             logger.info("Admin Removed Domain", { hostname });
             return true;
         }
         return false;
+    },
+
+    async loadFromRedis() {
+        await syncFromRedis();
     },
 
     getAll() {

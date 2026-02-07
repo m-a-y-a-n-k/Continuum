@@ -12,7 +12,7 @@ if (config.redis.enabled) {
         port: config.redis.port,
         lazyConnect: true
     });
-    // connection errors handled by ioredis auto-reconnect or silent fail in logic
+    redis.on("error", () => { }); // Prevent crash if Redis is down
 }
 
 // Fallback In-Memory Storage (Only works if single worker)

@@ -17,5 +17,14 @@ export const config = {
         host: process.env.REDIS_HOST || "localhost",
         port: process.env.REDIS_PORT || 6379,
     },
-    analyticsEnabled: true
+    analyticsEnabled: true,
+    healthCheck: {
+        enabled: true,
+        interval: 30000
+    },
+    optimization: {
+        autoWebp: true,
+        autoAvif: true,
+        minify: true
+    }
 };

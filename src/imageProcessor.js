@@ -4,11 +4,10 @@ import { logger } from "./logger.js";
 export async function optimizeImage(buffer, params) {
     try {
         let pipeline = sharp(buffer);
-
         const metadata = await pipeline.metadata();
-        const { width, height, quality, format } = params;
+        const { width, height, quality, format, accept } = params;
 
-        // Resize if width or height provided
+        // Resize
         if (width || height) {
             pipeline = pipeline.resize({
                 width: width ? parseInt(width) : null,
@@ -18,25 +17,32 @@ export async function optimizeImage(buffer, params) {
             });
         }
 
-        // Auto-format or explicit format
-        if (format) {
-            pipeline = pipeline.toFormat(format, { quality: quality ? parseInt(quality) : 80 });
-        } else if (metadata.format === 'jpeg' || metadata.format === 'png') {
-            // Default to webp for common formats if not specified
-            pipeline = pipeline.toFormat('webp', { quality: quality ? parseInt(quality) : 80 });
-        } else {
-            pipeline = pipeline.toFormat(metadata.format, { quality: quality ? parseInt(quality) : 80 });
+        let targetFormat = format;
+        if (!targetFormat) {
+            // Auto-format based on browser support (Accept header)
+            if (accept && accept.includes("image/avif")) {
+                targetFormat = "avif";
+            } else if (accept && accept.includes("image/webp")) {
+                targetFormat = "webp";
+            } else {
+                targetFormat = metadata.format;
+            }
         }
+
+        pipeline = pipeline.toFormat(targetFormat, {
+            quality: quality ? parseInt(quality) : 80,
+            effort: targetFormat === 'avif' ? 4 : 4 // Balance speed/compression
+        });
 
         const optimizedBuffer = await pipeline.toBuffer();
 
         return {
             buffer: optimizedBuffer,
-            format: format || (metadata.format === 'jpeg' || metadata.format === 'png' ? 'webp' : metadata.format),
-            contentType: `image/${format || (metadata.format === 'jpeg' || metadata.format === 'png' ? 'webp' : metadata.format)}`
+            format: targetFormat,
+            contentType: `image/${targetFormat}`
         };
     } catch (err) {
         logger.error("Image optimization failed", { error: err.message });
-        return { buffer, format: null, contentType: null }; // Return original on failure
+        return { buffer, format: null, contentType: null };
     }
 }
